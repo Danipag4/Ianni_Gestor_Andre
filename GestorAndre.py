@@ -17,6 +17,16 @@ logo_path = Path(__file__).with_name("IANNIlogo_ianni_agropecuaria.png.png")
 st.markdown("""
 <style>
 @media print {
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
     /* Ocultar barra lateral inteira */
     section[data-testid="stSidebar"] {
         display: none !important;
@@ -39,18 +49,55 @@ st.markdown("""
     
     /* Expandir o conteúdo principal para ocupar a largura máxima do papel */
     .main .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+        padding: 0 !important;
         max-width: 100% !important;
+    }
+
+    [data-testid="stPlotlyChart"] {
+        margin: 0 !important;
+    }
+
+    [data-testid="stImage"] img {
+        max-height: 55px !important;
+        width: auto !important;
+    }
+
+    h1 {
+        font-size: 20pt !important;
+        margin: 0 !important;
+    }
+
+    h3 {
+        font-size: 12pt !important;
+        margin: 0 !important;
+    }
+
+    h2 {
+        font-size: 14pt !important;
+        margin: 4px 0 !important;
     }
 }
 </style>
 """, unsafe_allow_html=True)
 
 # Leitura da base de dados geral
-arquivo_csv = Path(__file__).with_name("Gestor Andre.csv")
+nome_csv = "Gestor Andre.csv"
+pasta_script = Path(__file__).resolve().parent
+caminhos_csv = [
+    pasta_script / nome_csv,
+    Path.cwd() / nome_csv,
+]
+arquivo_csv = next((caminho for caminho in caminhos_csv if caminho.is_file()), None)
+
+if arquivo_csv is None:
+    caminhos_procurados = "\n".join(f"- {caminho}" for caminho in caminhos_csv)
+    st.error(
+        "Não foi possível localizar a base de dados CSV. "
+        f"Coloque '{nome_csv}' na mesma pasta deste arquivo ou no diretório de execução.\n\n"
+        f"Caminhos procurados:\n{caminhos_procurados}"
+    )
+    st.stop()
+
 df = pd.read_csv(arquivo_csv, sep=",", encoding="utf-8-sig")
 
 # Normaliza os nomes para aceitar os cabeçalhos acentuados do CSV.
@@ -89,6 +136,9 @@ df["Gestor"] = pd.to_numeric(df["Média Gestor"], errors="coerce")
 if "printing" not in st.session_state:
     st.session_state.printing = False
 
+def desmarcar_comentarios():
+    st.session_state.mostrar_comentarios = False
+
 # Cores padronizadas para os tipos de avaliação
 color_discrete_map = {
     "Gestor": "#1565C0"
@@ -120,7 +170,12 @@ st.sidebar.markdown(
 df_opcoes = df[df["Avaliador"] == nome_avaliador]
 
 nomes_disponiveis = sorted(df_opcoes["Colab"].dropna().unique())
-Nome = st.sidebar.selectbox("Avaliados", nomes_disponiveis)
+Nome = st.sidebar.selectbox(
+    "Avaliados",
+    nomes_disponiveis,
+    key="nome_avaliado",
+    on_change=desmarcar_comentarios
+)
 
 # Filtros e agregações do colaborador selecionado
 df_filtered = df[df["Colab"] == Nome]
@@ -155,30 +210,37 @@ if st.session_state.printing:
         barmode='group', 
         color_discrete_map=color_discrete_map
     )
-    fig_comp.update_layout(xaxis_title="Competências", yaxis_title="Médias")
+    fig_comp.update_layout(
+        xaxis_title="Competências",
+        yaxis_title="Médias",
+        height=270,
+        margin=dict(l=45, r=15, t=15, b=45)
+    )
     
     plotly_config_comp = {
         'displaylogo': False,
         'toImageButtonOptions': {
             'format': 'png',
             'filename': f'competencias_{Nome.replace(" ", "_")}',
-            'height': 600,
-            'width': 1000,
+            'height': 300,
+            'width': 500,
             'scale': 2
         }
     }
-    st.plotly_chart(fig_comp, use_container_width=True, config=plotly_config_comp)
+    col_grafico_esquerda, col_grafico, col_grafico_direita = st.columns([0.8, 2.4, 0.8])
+    with col_grafico:
+        st.plotly_chart(fig_comp, use_container_width=True, config=plotly_config_comp)
     
     st.markdown("---")
     
     # 2. Linhas para Anotações / Plano de Ação
-    st.write("### Anotações / Plano de Ação")
-    for i in range(6):
-        st.markdown('<div style="border-bottom: 1px dotted #888; height: 32px; margin-bottom: 2px; width: 100%;"></div>', unsafe_allow_html=True)
+    st.write("### Anotações")
+    for i in range(4):
+        st.markdown('<div style="border-bottom: 1px dotted #888; height: 24px; margin-bottom: 1px; width: 100%;"></div>', unsafe_allow_html=True)
         
     # Linha para data e assinatura de ciente
     st.markdown("""
-    <div style="margin-top: 60px; display: flex; justify-content: space-between; font-family: sans-serif; font-size: 14px; page-break-inside: avoid; break-inside: avoid;">
+    <div style="margin-top: 24px; display: flex; justify-content: space-between; font-family: sans-serif; font-size: 12px; page-break-inside: avoid; break-inside: avoid;">
         <div style="width: 45%; text-align: center;">
             <div style="border-bottom: 1px solid #444; margin-bottom: 8px; height: 30px;"></div>
             <span style="color: #333; font-weight: 500;">Assinatura do Colaborador (Ciente)</span>
@@ -271,20 +333,24 @@ else:
     else:
         st.info("Nenhuma competência encontrada para a seleção atual.")
 
-    mostrar_comentarios = st.checkbox("Mostrar comentários do avaliador")
-    if mostrar_comentarios and len(competencias_disponiveis) > 0:
-        df_comentarios = df_filtered[df_filtered["Compet"] == unica_Competencia].copy()
-        df_comentarios["COMENTARIO"] = df_comentarios["COMENTARIO"].fillna("").astype(str).str.strip()
-        df_comentarios = df_comentarios[df_comentarios["COMENTARIO"] != ""]
+    mostrar_comentarios = st.checkbox("Exibir Comentário", key="mostrar_comentarios")
+    if mostrar_comentarios:
+        df_comentarios = df_filtered.copy()
+        for coluna in ["COMENT_AVAL", "COMENT_AUTO"]:
+            df_comentarios[coluna] = df_comentarios[coluna].fillna("").astype(str).str.strip()
+        df_comentarios = df_comentarios[
+            (df_comentarios["COMENT_AVAL"] != "")
+            | (df_comentarios["COMENT_AUTO"] != "")
+        ]
 
         if not df_comentarios.empty:
-            df_comentarios = df_comentarios[["PERGUNTA", "COMENTARIO"]].rename(columns={
-                "PERGUNTA": "Pergunta",
-                "COMENTARIO": "Comentário do Avaliador"
+            df_comentarios = df_comentarios[["COMENT_AVAL", "COMENT_AUTO"]].drop_duplicates().rename(columns={
+                "COMENT_AVAL": "Comentário do Avaliador",
+                "COMENT_AUTO": "Comentário do Avaliado"
             })
             st.dataframe(df_comentarios, use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhum comentário encontrado para a competência selecionada.")
+            st.info("Nenhum comentário encontrado.")
 
     # ---------------------------------------------------------------------------------
     # 3. Terceira Seção: Desempenho Geral dos Avaliados
